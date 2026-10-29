@@ -1,4 +1,67 @@
 <x-app-layout>
+  <style>
+    .process-report-table thead th {
+      background: #f4f6fb;
+      color: #2f5597;
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+      border-bottom: 2px solid #dde3f0;
+      white-space: nowrap;
+    }
+
+    .process-report-table td {
+      vertical-align: middle;
+      border-top: 1px solid #eef0f5;
+      font-size: 14px;
+    }
+
+    .process-report-table .client-name {
+      font-weight: 500;
+      color: #333;
+    }
+
+    .process-report-table .client-mobile {
+      font-size: 12px;
+      color: #888;
+    }
+
+    .process-report-table .client-mobile .material-icons {
+      font-size: 13px;
+      vertical-align: middle;
+      margin-right: 3px;
+    }
+
+    .process-report-table .next-step {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 12px;
+      background: #fff4e5;
+      color: #b26a00;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .process-report-table .status-pill {
+      display: inline-block;
+      min-width: 70px;
+      padding: 4px 12px;
+      border-radius: 14px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .process-report-table .status-pill.active {
+      background: #e3f2fd;
+      color: #0d47a1;
+    }
+
+    .process-report-table .status-pill.closed {
+      background: #e8f5e9;
+      color: #1b5e20;
+    }
+  </style>
   <div class="row">
     <div class="col-md-12">
       <div class="card">
@@ -42,36 +105,68 @@
             </div>
           </form>
 
-          <div class="table-responsive">
-            <table class="table table-striped table-bordered table-hover no-wrap">
-              <thead class="text-primary">
-                @foreach($headings as $heading)
-                <th>{{ $heading }}</th>
-                @endforeach
+          <div class="table-responsive mt-3">
+            <table class="table table-hover process-report-table">
+              <thead>
+                <tr>
+                  <th class="text-center" style="width:60px;">#</th>
+                  <th>Client</th>
+                  <th>Created On</th>
+                  <th>Process</th>
+                  <th style="min-width:170px;">Progress</th>
+                  <th>Last Completed</th>
+                  <th>Next Step</th>
+                  <th class="text-center">Status</th>
+                </tr>
               </thead>
               <tbody>
-                @forelse($rows as $row)
+                @forelse($rows as $index => $row)
                 <tr>
-                  @foreach($row as $i => $cell)
-                  @if($i == 5)
-                  <td><span class="badge badge-{{ $cell == 'Closed' ? 'success' : 'warning' }}">{{ $cell }}</span></td>
-                  @elseif($i >= 7)
-                  <td class="text-center" style="background-color: {{ $cell === 'Pending' ? '#ffc7ce' : ($cell === '-' ? '#f2f2f2' : '#c6efce') }}; color: {{ $cell === 'Pending' ? '#9c0006' : ($cell === '-' ? '#a6a6a6' : '#006100') }};">{{ $cell }}</td>
-                  @else
-                  <td>{{ $cell }}</td>
-                  @endif
-                  @endforeach
+                  <td class="text-center text-muted">{{ $records->firstItem() + $index }}</td>
+                  <td>
+                    <div class="client-name">{{ $row->name }}</div>
+                    <div class="client-mobile"><i class="material-icons">phone</i>{{ $row->mobile }}</div>
+                  </td>
+                  <td class="text-nowrap">{{ $row->created_date }}</td>
+                  <td>{{ $row->process }}</td>
+                  <td>
+                    <div class="d-flex justify-content-between small mb-1">
+                      <span>{{ $row->completed }} of {{ $row->total }} steps</span>
+                      <span class="font-weight-bold">{{ $row->percent }}%</span>
+                    </div>
+                    <div class="progress" style="height:6px;">
+                      <div class="progress-bar {{ $row->closed ? 'bg-success' : 'bg-info' }}" role="progressbar" style="width: {{ $row->percent }}%;"></div>
+                    </div>
+                  </td>
+                  <td>
+                    @if($row->last_completed)
+                    <div>{{ $row->last_completed }}</div>
+                    <div class="small text-muted text-nowrap">{{ $row->last_completed_at }}</div>
+                    @else
+                    <span class="text-muted">—</span>
+                    @endif
+                  </td>
+                  <td>
+                    @if($row->next_step)
+                    <span class="next-step">{{ $row->next_step }}</span>
+                    @else
+                    <span class="text-muted">—</span>
+                    @endif
+                  </td>
+                  <td class="text-center">
+                    <span class="status-pill {{ $row->closed ? 'closed' : 'active' }}">{{ $row->closed ? 'Closed' : 'Active' }}</span>
+                  </td>
                 </tr>
                 @empty
                 <tr>
-                  <td colspan="{{ count($headings) }}" class="text-center text-muted">No records found.</td>
+                  <td colspan="8" class="text-center text-muted py-4">No records found.</td>
                 </tr>
                 @endforelse
               </tbody>
             </table>
           </div>
-          <div class="d-flex justify-content-between align-items-center">
-            <span>Showing {{ $records->firstItem() ?? 0 }} to {{ $records->lastItem() ?? 0 }} of {{ $records->total() }} entries</span>
+          <div class="d-flex flex-wrap justify-content-between align-items-center mt-2">
+            <span class="text-muted small">Showing {{ $records->firstItem() ?? 0 }} to {{ $records->lastItem() ?? 0 }} of {{ $records->total() }} entries</span>
             {{ $records->links('pagination::bootstrap-4') }}
           </div>
         </div>

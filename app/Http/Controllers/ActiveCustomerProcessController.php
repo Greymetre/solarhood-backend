@@ -273,9 +273,33 @@ class ActiveCustomerProcessController extends Controller
         $processes = CustomerProcess::select('id', 'process_name')->get();
 
         $records = $this->activeProcessReportQuery($request)->paginate(50)->withQueryString();
-        [$headings, $rows] = $this->activeProcessReportData($request, $records->getCollection(), $records->firstItem() ?? 1);
 
-        return view('reports.active_process_report', compact('customers', 'processes', 'records', 'headings', 'rows'));
+        // Listing shows progress summary only; step-wise columns are in the Excel download
+        $rows = $records->getCollection()->map(function ($row) {
+            $steps = $row->steps->sortBy(function ($step) {
+                return optional($step->step)->sort_order;
+            })->values();
+            $completedSteps = $steps->where('status', 'completed');
+            $lastCompleted = $completedSteps->sortBy('completed_at')->last();
+            $nextPending = $steps->firstWhere('status', '!=', 'completed');
+            $total = $steps->count();
+
+            return (object) [
+                'name' => $row->customer->name ?? '',
+                'mobile' => $row->customer->mobile ?? '',
+                'created_date' => !empty($row->customer->creation_date) && strtotime($row->customer->creation_date) ? date('d M Y', strtotime($row->customer->creation_date)) : '-',
+                'process' => $row->process->process_name ?? '',
+                'completed' => $completedSteps->count(),
+                'total' => $total,
+                'percent' => $total > 0 ? round($completedSteps->count() * 100 / $total) : 0,
+                'closed' => $total > 0 && $completedSteps->count() == $total,
+                'last_completed' => $lastCompleted ? (optional($lastCompleted->step)->value ?? '') : null,
+                'last_completed_at' => $lastCompleted && $lastCompleted->completed_at ? $lastCompleted->completed_at->format('d M Y') : '',
+                'next_step' => $nextPending ? (optional($nextPending->step)->value ?? '') : null,
+            ];
+        });
+
+        return view('reports.active_process_report', compact('customers', 'processes', 'records', 'rows'));
     }
 
     public function activeProcessReportDownload(Request $request)
