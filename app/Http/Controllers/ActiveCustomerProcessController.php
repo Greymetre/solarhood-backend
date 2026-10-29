@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ActiveProcessReportExport;
 use App\Models\ActiveCustomerProcess;
 use App\Models\ActiveCustomerProcessStep;
 use App\Models\CustomerProcess;
@@ -13,6 +14,7 @@ use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Yajra\DataTables\Facades\DataTables;
+use Excel;
 
 class ActiveCustomerProcessController extends Controller
 {
@@ -263,6 +265,148 @@ class ActiveCustomerProcessController extends Controller
             'status' => 'success',
             'message' => 'Step marked as completed successfully.',
         ]);
+    }
+
+    public function activeProcessReport(Request $request)
+    {
+        $customers = $this->reportCustomers();
+        $processes = CustomerProcess::select('id', 'process_name')->get();
+
+        $records = $this->activeProcessReportQuery($request)->paginate(50)->withQueryString();
+        [$headings, $rows] = $this->activeProcessReportData($request, $records->getCollection(), $records->firstItem() ?? 1);
+
+        return view('reports.active_process_report', compact('customers', 'processes', 'records', 'headings', 'rows'));
+    }
+
+    public function activeProcessReportDownload(Request $request)
+    {
+        ini_set('max_execution_time', 600);
+        ini_set('memory_limit', '1024M');
+        $records = $this->activeProcessReportQuery($request)->get();
+        [$headings, $rows] = $this->activeProcessReportData($request, $records);
+
+        return Excel::download(new ActiveProcessReportExport($headings, $rows), 'active_process_report_' . date('d_m_Y') . '.xlsx');
+    }
+
+    private function reportCustomers()
+    {
+        $customers = Customers::where('active', 'Y');
+        if (!auth()->user()->hasRole('superadmin') && !auth()->user()->hasRole('Admin')) {
+            $customers->whereIn('id', $this->reportCustomerIds());
+        }
+        return $customers->select('id', 'name')->get();
+    }
+
+    private function reportCustomerIds()
+    {
+        $users_ids = getUsersReportingToAuth();
+        return EmployeeDetail::whereIn('user_id', $users_ids)->pluck('customer_id')->toArray();
+    }
+
+    private function activeProcessReportQuery(Request $request)
+    {
+        $query = ActiveCustomerProcess::with([
+            'customer:id,name,mobile,creation_date',
+            'process:id,process_name',
+            'steps.step',
+        ]);
+
+        if (!auth()->user()->hasRole('superadmin') && !auth()->user()->hasRole('Admin')) {
+            $query->whereIn('customer_id', $this->reportCustomerIds());
+        }
+
+        if (auth()->user()->hasRole('Service')) {
+            $query->whereHas('process', function ($q) {
+                $q->where('process_type', 'Service');
+            });
+        }
+
+        if (!empty($request->process_id)) {
+            $query->where('process_id', $request->process_id);
+        }
+
+        if (!empty($request->customer_id)) {
+            $query->where('customer_id', $request->customer_id);
+        }
+
+        if (!empty($request->start_date)) {
+            $query->whereHas('customer', function ($q) use ($request) {
+                $q->where('creation_date', '>=', $request->start_date);
+            });
+        }
+
+        if (!empty($request->end_date)) {
+            $query->whereHas('customer', function ($q) use ($request) {
+                $q->where('creation_date', '<=', $request->end_date);
+            });
+        }
+
+        // Default to active (at least one step pending)
+        $status = $request->input('status', 'active');
+        if ($status == 'closed') {
+            $query->whereHas('steps')
+                ->whereDoesntHave('steps', function ($q) {
+                    $q->where('status', '!=', 'completed');
+                });
+        } elseif ($status == 'active') {
+            $query->whereHas('steps', function ($q) {
+                $q->where('status', '!=', 'completed');
+            });
+        }
+
+        return $query->select('active_customer_processes.*')->latest();
+    }
+
+    /**
+     * Build headings + rows: one column per process step holding its completed date (or Pending).
+     */
+    private function activeProcessReportData(Request $request, $records, $startIndex = 1)
+    {
+        $stepRows = $records->map(function ($row) {
+            return $row->steps->sortBy(function ($step) {
+                return optional($step->step)->sort_order;
+            })->values();
+        });
+
+        // Selected process -> real step names as headings, otherwise generic Step 1..N
+        if (!empty($request->process_id)) {
+            $stepHeadings = CustomerProcessStep::where('customer_process_id', $request->process_id)->pluck('value')->toArray();
+        } else {
+            $maxSteps = $stepRows->map->count()->max() ?? 0;
+            $stepHeadings = [];
+            for ($i = 1; $i <= $maxSteps; $i++) {
+                $stepHeadings[] = 'Step ' . $i;
+            }
+        }
+
+        $headings = array_merge(['Sr. No.', 'Client Name', 'Mobile Number', 'Customer Created Date', 'Process', 'Status'], $stepHeadings);
+
+        $rows = [];
+        foreach ($records->values() as $index => $row) {
+            $steps = $stepRows[$index];
+            $completed = $steps->where('status', 'completed')->count();
+            $line = [
+                $startIndex + $index,
+                $row->customer->name ?? '',
+                $row->customer->mobile ?? '',
+                !empty($row->customer->creation_date) && strtotime($row->customer->creation_date) ? date('d-m-Y', strtotime($row->customer->creation_date)) : '',
+                $row->process->process_name ?? '',
+                ($steps->count() > 0 && $completed == $steps->count() ? 'Closed' : 'Active') . ' (' . $completed . '/' . $steps->count() . ')',
+            ];
+            foreach (array_keys($stepHeadings) as $i) {
+                $step = $steps[$i] ?? null;
+                if (!$step) {
+                    $line[] = '';
+                } elseif ($step->status == 'completed') {
+                    $line[] = $step->completed_at ? $step->completed_at->format('d-m-Y') : 'Completed';
+                } else {
+                    $line[] = 'Pending';
+                }
+            }
+            $rows[] = $line;
+        }
+
+        return [$headings, $rows];
     }
 
     public function updateRemark(Request $request, ActiveCustomerProcessStep $step)

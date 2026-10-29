@@ -2533,6 +2533,13 @@
                            <div class="d-none mobile_hide"> Market Intelligence</div>
                         </a>
                      </li>
+                     <li class="nav-link-btn {{ request()->is('reports/active_process_report*') ? 'active' : '' }}">
+                        <a class="hoveradd2" href="{{ url('reports/active_process_report') }}">
+                           <i class="material-icons icon">account_tree</i>
+                           <span> Active Process Report</span>
+                           <div class="d-none mobile_hide"> Active Process Report</div>
+                        </a>
+                     </li>
                   </ul>
                </div>
             </li>

@@ -1146,6 +1146,8 @@ Route::group(['middleware' => ['auth']], function () {
 
     //Process Management Routes
     Route::resource('customer_process', CustomerProcessController::class);
+    Route::get('reports/active_process_report', [ActiveCustomerProcessController::class, 'activeProcessReport'])->name('reports.active_process_report');
+    Route::get('reports/active_process_report/download', [ActiveCustomerProcessController::class, 'activeProcessReportDownload'])->name('reports.active_process_report.download');
     Route::resource('active_customer_process', ActiveCustomerProcessController::class);
     Route::any('get_active_process_steps/{activeCustomerProcess}', [ActiveCustomerProcessController::class, 'getActiveProcessSteps'])->name('get_active_process_steps');
     Route::post('complete_process_step/{step}', [ActiveCustomerProcessController::class, 'completeProcessStep']);
