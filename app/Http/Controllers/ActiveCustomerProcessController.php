@@ -285,7 +285,16 @@ class ActiveCustomerProcessController extends Controller
         $records = $this->activeProcessReportQuery($request)->get();
         [$headings, $rows] = $this->activeProcessReportData($request, $records);
 
-        return Excel::download(new ActiveProcessReportExport($headings, $rows), 'active_process_report_' . date('d_m_Y') . '.xlsx');
+        $filters = [
+            'Process' => !empty($request->process_id) ? (CustomerProcess::find($request->process_id)->process_name ?? '-') : 'All',
+            'Customer' => !empty($request->customer_id) ? (Customers::find($request->customer_id)->name ?? '-') : 'All',
+            'Status' => ucfirst($request->input('status', 'active')),
+            'Created Date' => ($request->start_date ? date('d-m-Y', strtotime($request->start_date)) : 'Start') . ' to ' . ($request->end_date ? date('d-m-Y', strtotime($request->end_date)) : 'Today'),
+            'Total Records' => count($rows),
+            'Generated On' => date('d-m-Y h:i A'),
+        ];
+
+        return Excel::download(new ActiveProcessReportExport($headings, $rows, $filters), 'active_process_report_' . date('d_m_Y') . '.xlsx');
     }
 
     private function reportCustomers()
@@ -368,9 +377,10 @@ class ActiveCustomerProcessController extends Controller
             })->values();
         });
 
-        // Selected process -> real step names as headings, otherwise generic Step 1..N
-        if (!empty($request->process_id)) {
-            $stepHeadings = CustomerProcessStep::where('customer_process_id', $request->process_id)->pluck('value')->toArray();
+        // Single process (selected or all rows share one) -> real step names as headings, otherwise generic Step 1..N
+        $processIds = !empty($request->process_id) ? [$request->process_id] : $records->pluck('process_id')->unique()->values()->toArray();
+        if (count($processIds) == 1) {
+            $stepHeadings = CustomerProcessStep::where('customer_process_id', $processIds[0])->pluck('value')->toArray();
         } else {
             $maxSteps = $stepRows->map->count()->max() ?? 0;
             $stepHeadings = [];
@@ -379,7 +389,7 @@ class ActiveCustomerProcessController extends Controller
             }
         }
 
-        $headings = array_merge(['Sr. No.', 'Client Name', 'Mobile Number', 'Customer Created Date', 'Process', 'Status'], $stepHeadings);
+        $headings = array_merge(['Sr. No.', 'Client Name', 'Mobile Number', 'Customer Created Date', 'Process', 'Status', 'Progress'], $stepHeadings);
 
         $rows = [];
         foreach ($records->values() as $index => $row) {
@@ -391,12 +401,13 @@ class ActiveCustomerProcessController extends Controller
                 $row->customer->mobile ?? '',
                 !empty($row->customer->creation_date) && strtotime($row->customer->creation_date) ? date('d-m-Y', strtotime($row->customer->creation_date)) : '',
                 $row->process->process_name ?? '',
-                ($steps->count() > 0 && $completed == $steps->count() ? 'Closed' : 'Active') . ' (' . $completed . '/' . $steps->count() . ')',
+                $steps->count() > 0 && $completed == $steps->count() ? 'Closed' : 'Active',
+                $completed . ' / ' . $steps->count(),
             ];
             foreach (array_keys($stepHeadings) as $i) {
                 $step = $steps[$i] ?? null;
                 if (!$step) {
-                    $line[] = '';
+                    $line[] = '-';
                 } elseif ($step->status == 'completed') {
                     $line[] = $step->completed_at ? $step->completed_at->format('d-m-Y') : 'Completed';
                 } else {

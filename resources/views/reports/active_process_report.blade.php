@@ -52,8 +52,14 @@
               <tbody>
                 @forelse($rows as $row)
                 <tr>
-                  @foreach($row as $cell)
-                  <td @if($cell === 'Pending') class="text-danger" @endif>{{ $cell }}</td>
+                  @foreach($row as $i => $cell)
+                  @if($i == 5)
+                  <td><span class="badge badge-{{ $cell == 'Closed' ? 'success' : 'warning' }}">{{ $cell }}</span></td>
+                  @elseif($i >= 7)
+                  <td class="text-center" style="background-color: {{ $cell === 'Pending' ? '#ffc7ce' : ($cell === '-' ? '#f2f2f2' : '#c6efce') }}; color: {{ $cell === 'Pending' ? '#9c0006' : ($cell === '-' ? '#a6a6a6' : '#006100') }};">{{ $cell }}</td>
+                  @else
+                  <td>{{ $cell }}</td>
+                  @endif
                   @endforeach
                 </tr>
                 @empty
